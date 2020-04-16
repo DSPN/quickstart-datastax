@@ -1,0 +1,328 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Creates Cassandra Node (1-3).
+Parameters:
+  DSEVersion:
+    AllowedValues:
+      - 6.7.7
+    Default: 6.7.7
+    ConstraintDescription: "Choose DSE version to install."
+    Type: String
+  ClusterName:
+    Description: Name of the DSE Cluster.
+    Type: String
+    Default: Cassandra-Cluster
+  CreateClusterWithPublicIP:
+    Description: "Whether to create the Cassandra Cluster nodes in public subnet"
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "false"
+      - "true"
+  DatacenterName:
+    Description: Name of the Cassandra Datacenter.
+    Type: String
+    Default: OSS-dc0
+  DBPassword:
+    Type: String
+    Description: C* password
+    NoEcho: true
+  OpsCPassword:
+    Type: String
+    Description: Password for default OpsCenter user 'admin'
+    NoEcho: true
+  SubnetID:
+    Description: Subnet Id
+    Type: 'AWS::EC2::Subnet::Id'
+  KeyPairName:
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    ConstraintDescription: Name of an existing EC2 KeyPair.
+  S3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: "Bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+    Default: raks1dev
+    Description: "S3 bucket name for the CF template assets. Bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+    Type: String
+  S3BucketRegion:
+    Default: 'us-east-1'
+    Description: 'The AWS Region where the Quick Start S3 bucket (QSS3BucketName) is hosted. When using your own bucket, you must specify this value.'
+    Type: String
+  S3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*$"
+    ConstraintDescription: "S3 Bucket key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+    Default: aws-mp-oss/
+    Description: "S3 key prefix for the CF template assets. S3 bucket key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+    Type: String
+  SecGroup:
+    Description: "Security Group ID."
+    Type: String
+  InstanceType:
+    AllowedValues:
+      - t2.medium
+      - t2.large
+      - t3.medium
+      - t3.large
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+    ConstraintDescription: "Must be a valid EC2 instance type."
+    Default: t2.medium
+    Description: "EC2 instance type"
+    Type: String
+  VolumeSize:
+    Type: Number
+    Description: "EBS volume size of the Cassandra Cluster Nodes in GB"
+    Default: 1024
+  SeedNodeIps:
+    Description: "csv IPs of the seedsnodes."
+    Type: String
+    Default: ""
+  TmpS3Bucket:
+    Description: Temp S3 Bucket
+    Type: String
+Conditions:
+  UsingDefaultBucket: !Equals [!Ref S3BucketName, 'aws-quickstart']
+Mappings:
+  AWSAMIRegionMap:
+    us-east-1:
+      1804HVM: ami-02af7ef3e6165b552
+Resources:
+  InstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          -
+            Effect: 'Allow'
+            Principal:
+              Service:
+                - 'ec2.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: '/'
+      Roles:
+        - Ref: 'InstanceRole'
+  AuthenticatedS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+        PolicyName: AuthenticatedS3GetObjects
+        Roles:
+        - !Ref InstanceRole
+        PolicyDocument:
+          Statement:
+            - Sid: BucketAccess
+              Effect: Allow
+              Action:
+                - 's3:GetObject'
+              Resource: !Sub arn:aws:s3:::${S3BucketName}/*
+            - Sid: TmpBucketList
+              Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${TmpS3Bucket}
+            - Sid: TmpBucketReadWrite
+              Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub arn:aws:s3:::${TmpS3Bucket}/*
+  OpsCenterInstance:
+    Type: 'AWS::EC2::Instance'
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Metadata:
+      'AWS::CloudFormation::Authentication':
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref InstanceRole
+          buckets: !Ref S3BucketName
+      'AWS::CloudFormation::Init':
+        configSets:
+          cs_install:
+            - install_and_enable_cfn_hup
+            - install_opscenter
+            - post_install
+        install_and_enable_cfn_hup:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Join
+                - ''
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - |+
+
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - |+
+
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join
+                - ''
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - >
+                    path=Resources.OpsCenterInstance.Metadata.AWS::CloudFormation::Init
+                  - 'action=/usr/local/bin/cfn-init -v '
+                  - '         --stack '
+                  - !Ref 'AWS::StackName'
+                  - '         --resource OpsCenterInstance '
+                  - '         --configsets cs_install '
+                  - '         --region '
+                  - !Ref 'AWS::Region'
+                  - |+
+
+                  - |
+                    runas=root
+            /lib/systemd/system/cfn-hup.service:
+              content: !Join
+                - ''
+                - - |
+                    [Unit]
+                  - |+
+                    Description=cfn-hup daemon
+
+                  - |
+                    [Service]
+                  - |
+                    Type=simple
+                  - |
+                    ExecStart=/usr/local/bin/cfn-hup
+                  - |+
+                    Restart=always
+                  - |
+                    [Install]
+                  - WantedBy=multi-user.target
+          commands:
+            01enable_cfn_hup:
+              command: systemctl enable cfn-hup.service
+            02start_cfn_hup:
+              command: systemctl start cfn-hup.service
+        install_opscenter:
+          sources:
+            # /home/ubuntu/dse-install: https://raks1dev-p.s3.amazonaws.com/ansible.tar
+            /home/ubuntu/dse-install:
+              !Sub
+                - https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${S3KeyPrefix}scripts/ansible.tar
+                - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref S3BucketRegion]
+                  S3Bucket: !If [UsingDefaultBucket, !Sub '${S3BucketName}-${AWS::Region}', !Ref S3BucketName]
+          commands:
+            01_link_directory:
+              command: "ln -s /home/ubuntu/dse-install /home/cassandra"
+            02_get_key:
+              command: !Sub
+                /home/cassandra/get-key-s3.sh s3://${TmpS3Bucket}
+            03_1_run_playbooks:
+              command: |
+                #! /bin/bash
+                ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/os-config.yml --extra-vars "host=local"
+            03_2_run_playbooks:
+              command: |
+                #! /bin/bash
+                ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/ebs-init.yml --extra-vars "host=local"
+            04_install_opscenter:
+              command: !Sub |
+                #!/bin/bash -xe
+                ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/opscenter-install.yml --extra-vars "cluster_name=${ClusterName} seeds=${SeedNodeIps} host=local"
+            05_update_seed1agent:
+              command: !Sub |
+                #! /bin/bash -xe
+                PrivateIp=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4/)
+                echo [SEED] >> /home/cassandra/ansible-hosts.cfg
+                echo ${SeedNodeIps} >> /home/cassandra/ansible-hosts.cfg
+                ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/update-address.yml --extra-vars "opscenter_ip=$PrivateIp host=SEED"
+        post_install:
+          commands:
+            01_post_install_opscenter:
+              command: "touch /tmp/01_post_install_opscenter"
+    Properties:
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      NetworkInterfaces:
+        - DeleteOnTermination: true
+          DeviceIndex: "0"
+          # SubnetId: !If [CreateInPublicSubnet, !Ref PublicSubnet2ID, !Ref PrivateSubnet2ID]
+          SubnetId: !Ref SubnetID
+          GroupSet:
+            - !Ref SecGroup
+      KeyName: !Ref KeyPairName
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref 'AWS::Region'
+        - 1804HVM
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvdf
+          Ebs:
+            VolumeSize: !Ref VolumeSize
+            VolumeType: gp2
+      Tags:
+          - Key: Name
+            Value: OpsCenter
+      UserData:
+        Fn::Base64: !Sub
+        - |
+          #!/bin/bash -xe
+          #CFN Signaling fuctions (begin)
+          function cfn_fail
+          {
+            cfn-signal -e 1 --stack ${AWS::StackName} --region ${AWS::Region} --resource OpsCenterInstance
+            exit 1
+          }
+          function cfn_success
+          {
+            cfn-signal -e 0 --stack ${AWS::StackName} --region ${AWS::Region} --resource OpsCenterInstance
+            exit 0
+          }
+          #Load Linux utils
+          until git clone https://github.com/aws-quickstart/quickstart-linux-utilities.git ; do echo "Retrying"; done
+          cd /quickstart-linux-utilities && source quickstart-cfn-tools.source
+          # Constants
+          S3URI=https://${S3BucketName}.${S3Region}.amazonaws.com/${S3KeyPrefix}
+          # Prep operating systems
+          qs_update-os || qs_err
+          qs_bootstrap_pip || qs_err
+          qs_aws-cfn-bootstrap || qs_err
+          #Run cfn-init configsets
+          cfn-init -v --stack ${AWS::StackName} --resource OpsCenterInstance --configsets cs_install --region ${AWS::Region} || qs_err
+          # Signal cfn-init (final check)
+          [ $(qs_status) == 0 ] && cfn_success || cfn_fail
+
+        - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref S3BucketRegion]
+Outputs:
+  OpsCenterURL:
+    Value: !Join
+      - ''
+      - - http://
+        - !GetAtt 'OpsCenterInstance.PublicDnsName'
+        - :8888
+    Description: URL for OpsCenter
+  OpsCenterPublicIP:
+    Value: !GetAtt 'OpsCenterInstance.PublicIp'
+    Description: Public IP for OpsCenter
+  OpsCenterPrivateIP:
+    Value: !GetAtt 'OpsCenterInstance.PrivateIp'
+    Description: Private IP for OpsCenter
