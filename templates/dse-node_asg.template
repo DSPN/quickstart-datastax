@@ -1,0 +1,266 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Creates DSE ASG Nodes (3+).
+Parameters:
+  DSEVersion:
+    AllowedValues:
+      - 6.7.7
+    Default: 6.7.7
+    ConstraintDescription: "Choose DSE version to install."
+    Type: String
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  OpsCenterIp:
+    Description: Public IP of OpsCenter instance.
+    Type: String
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})
+    ConstraintDescription: must be valid IP
+  ClusterName:
+    Description: Name of DSE cluster
+    Type: String
+  DataCenterName:
+    Description: Name of DSE cluster
+    Type: String
+  DataCenterSize:
+    Type: Number
+    Description: Number of nodes in datacenter
+  InstanceProfile:
+    Description: InstanceProfile for the instance
+    Type: String
+  InstanceRole:
+    Description: InstanceRole for CF Auth
+    Type: String
+  S3BucketName:
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
+    ConstraintDescription: "Bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+    Description: "S3 bucket name for the CF template assets. Bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+    Type: String
+  S3BucketRegion:
+    Default: 'us-east-1'
+    Description: 'The AWS Region where the Quick Start S3 bucket (S3BucketName) is hosted. When using your own bucket, you must specify this value.'
+    Type: String
+  S3KeyPrefix:
+    AllowedPattern: "^[0-9a-zA-Z-/]*$"
+    ConstraintDescription: "S3 Bucket key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+    Description: "S3 key prefix for the CF template assets. S3 bucket key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
+    Type: String
+  InstanceType:
+    Description: Node EC2 instance type
+    Type: String
+    AllowedValues:
+      - t2.medium
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+    Default: t2.medium
+    ConstraintDescription: must be a valid EC2 instance type.
+  VolumeSize:
+    Type: Number
+    Description: EBS volume size in GB
+    Default: '1024'
+  Subnets:
+    Type: CommaDelimitedList
+    Description: List of subnet ids to deploy nodes into
+  SecGroupId:
+    Description: "Security Group ID."
+    Type: AWS::EC2::SecurityGroup::Id
+  AvailabilityZones:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: List of AZs in VPC
+  TmpS3Bucket:
+    Description: Temp S3 Bucket
+    Type: String
+  SeedNodeIps:
+    Description: "csv IPs of the seedsnodes."
+    Type: String
+    Default: ""
+Conditions:
+  UsingDefaultBucket: !Equals [!Ref S3BucketName, 'aws-quickstart']
+Mappings:
+  ClusterSizeMap:
+    "4":
+      Value: "1"
+    "5":
+      Value: "2"
+    "6":
+      Value: "3"
+    "7":
+      Value: "4"
+    "8":
+      Value: "5"
+    "9":
+      Value: "6"
+  AWSAMIRegionMap:
+    AMI:
+      1804HVM: ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-
+    us-east-1:
+      1804HVM: ami-02af7ef3e6165b552
+Resources:
+  CassandraGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones: !Ref AvailabilityZones
+      LaunchConfigurationName: !Ref CassandraLaunchConfig
+      MinSize: !FindInMap
+        - ClusterSizeMap
+        - !Ref DataCenterSize
+        - Value
+      MaxSize: !FindInMap
+        - ClusterSizeMap
+        - !Ref DataCenterSize
+        - Value
+      VPCZoneIdentifier: !Ref Subnets
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT90M
+        Count: '1'
+    # UpdatePolicy:
+    #   AutoScalingRollingUpdate:
+    #     MinInstancesInService: 1
+    #     MaxBatchSize: 1
+    #     PauseTime: PT90M
+    #     WaitOnResourceSignals: true
+  CassandraLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref InstanceRole
+          buckets: !Ref S3BucketName
+      AWS::CloudFormation::Init:
+        configSets:
+          full_install:
+            - install_cfn
+            - install_cassandra
+            - post_install
+        install_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Join
+                - ''
+                - - "[main]\n"
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - "\n"
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - "\n"
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join
+                - ''
+                - - "[cfn-auto-reloader-hook]\n"
+                  - "triggers=post.update\n"
+                  - "path=Resources.CassandraLaunchConfig.Metadata.AWS::CloudFormation::Init\n"
+                  - 'action=/usr/local/bin/cfn-init -v '
+                  - '         --stack '
+                  - !Ref 'AWS::StackName'
+                  - '         --resource CassandraLaunchConfig '
+                  - '         --configsets full_install '
+                  - '         --region '
+                  - !Ref 'AWS::Region'
+                  - "\n"
+                  - "runas=root\n"
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        install_cassandra:
+          sources:
+            # /home/ubuntu/dse-install: https://raks1dev-p.s3.amazonaws.com/ansible.tar
+            /home/ubuntu/dse-install:
+              !Sub
+                - https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${S3KeyPrefix}scripts/ansible.tar
+                - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref S3BucketRegion]
+                  S3Bucket: !If [UsingDefaultBucket, !Sub '${S3BucketName}-${AWS::Region}', !Ref S3BucketName]
+          commands:
+            01_link_directory:
+              command: "ln -s /home/ubuntu/dse-install /home/cassandra"
+            02_1_key:
+              command: !Sub |
+                #!/bin/bash -xe
+                /home/cassandra/get-key-s3.sh s3://${TmpS3Bucket}
+            03_run_playbooks:
+              command: "/home/cassandra/playbooks.sh"
+            04_install_cassandra:
+              command: !Sub |
+                #!/bin/bash -xe
+                PrivateIp=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4/)
+                echo "----Before---------"
+                echo ${SeedNodeIps}
+                echo $PrivateIp
+                echo "----Before---------"
+                if [ -z "${SeedNodeIps}" ]; then
+                  ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/dse-install.yml --extra-vars "dse_version=${DSEVersion} cluster_name=${ClusterName} dc=${DataCenterName} seeds=$PrivateIp opscenter_ip=${OpsCenterIp} host=local"
+                else
+                  ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/dse-install.yml --extra-vars "dse_version=${DSEVersion} cluster_name=${ClusterName} dc=${DataCenterName} seeds=${SeedNodeIps} opscenter_ip=${OpsCenterIp} host=local"
+                fi
+                echo "----After---------"
+                echo ${SeedNodeIps}
+                echo $PrivateIp
+                echo "----After---------"
+        post_install:
+          commands:
+            01_post_install_cassandra:
+              command: "touch /tmp/01_post_install_cassandra"
+    Properties:
+      ImageId: !FindInMap
+        - AWSAMIRegionMap
+        - !Ref 'AWS::Region'
+        - 1804HVM
+      InstanceType: !Ref 'InstanceType'
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroups:
+        - !Ref SecGroupId
+      KeyName: !Ref KeyPairName
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvdf
+          Ebs:
+            VolumeType: gp2
+            VolumeSize: !Ref 'VolumeSize'
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - "#!/bin/bash -xe\n"
+            - "apt-get update\n"
+            - "apt-get -y install python python-setuptools python-pip\n"
+            - "pip install --retries 10 https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\
+              \ \n"
+            - "ln -s /usr/local/init/ubuntu/cfn-hup /etc/init.d/cfn-hup \n"
+            - "chmod 775 /usr/local/init/ubuntu/cfn-hup \n"
+            - "update-rc.d cfn-hup defaults \n"
+            - '/usr/local/bin/cfn-init -v '
+            - '         --stack '
+            - !Ref 'AWS::StackId'
+            - '         --resource CassandraLaunchConfig '
+            - '         --configsets full_install '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - "\n"
+            - '/usr/local/bin/cfn-signal -e $? '
+            - '         --stack '
+            - !Ref 'AWS::StackId'
+            - '         --resource CassandraGroup '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - "\n"
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT35M

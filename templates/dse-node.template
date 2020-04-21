@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Creates Cassandra Node (1-3).
+Description: Creates DSE Node (1-3).
 Parameters:
   DSEVersion:
     AllowedValues:
@@ -10,19 +10,10 @@ Parameters:
   ClusterName:
     Description: Name of the DSE Cluster.
     Type: String
-    Default: Cassandra-Cluster
-  CreateClusterWithPublicIP:
-    Description: "Whether to create the Cassandra Cluster nodes in public subnet"
-    Type: String
-    Default: "false"
-    AllowedValues:
-      - "false"
-      - "true"
-  DatacenterName:
+  DataCenterName:
     Description: Name of the Cassandra Datacenter.
     Type: String
-    Default: OSS-dc0
-  SubnetID:
+  SubnetId:
     Description: Subnet Id
     Type: 'AWS::EC2::Subnet::Id'
   KeyPairName:
@@ -31,21 +22,25 @@ Parameters:
   S3BucketName:
     AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
     ConstraintDescription: "Bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
-    Default: raks1dev
     Description: "S3 bucket name for the CF template assets. Bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
     Type: String
   S3BucketRegion:
     Default: 'us-east-1'
-    Description: 'The AWS Region where the Quick Start S3 bucket (QSS3BucketName) is hosted. When using your own bucket, you must specify this value.'
+    Description: 'The AWS Region where the Quick Start S3 bucket (S3BucketName) is hosted. When using your own bucket, you must specify this value.'
     Type: String
   S3KeyPrefix:
     AllowedPattern: "^[0-9a-zA-Z-/]*$"
     ConstraintDescription: "S3 Bucket key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
-    Default: aws-mp-oss/
     Description: "S3 key prefix for the CF template assets. S3 bucket key prefix can include numbers, lowercase letters, uppercase letters, hyphens (-), and forward slash (/)."
     Type: String
-  SecGroup:
+  SecGroupId:
     Description: "Security Group ID."
+    Type: AWS::EC2::SecurityGroup::Id
+  InstanceProfile:
+    Description: InstanceProfile for the instance
+    Type: String
+  InstanceRole:
+    Description: InstanceRole for CF Auth
     Type: String
   InstanceType:
     AllowedValues:
@@ -100,9 +95,6 @@ Parameters:
     Type: String
 Conditions:
   UsingDefaultBucket: !Equals [!Ref S3BucketName, 'aws-quickstart']
-  CreateInPublicSubnet: !Equals
-    - !Ref CreateClusterWithPublicIP
-    - true
   Seed1: !Equals [!Ref NodeNumber, 1]
   Seed2: !Equals [!Ref NodeNumber, 2]
 Mappings:
@@ -110,49 +102,6 @@ Mappings:
     us-east-1:
       1804HVM: ami-02af7ef3e6165b552
 Resources:
-  InstanceRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-          -
-            Effect: 'Allow'
-            Principal:
-              Service:
-                - 'ec2.amazonaws.com'
-            Action:
-              - 'sts:AssumeRole'
-      Path: '/'
-  InstanceProfile:
-    Type: 'AWS::IAM::InstanceProfile'
-    Properties:
-      Path: '/'
-      Roles:
-        - Ref: 'InstanceRole'
-  AuthenticatedS3Policy:
-    Type: AWS::IAM::Policy
-    Properties:
-        PolicyName: AuthenticatedS3GetObjects
-        Roles:
-        - !Ref InstanceRole
-        PolicyDocument:
-          Statement:
-            - Sid: BucketAccess
-              Effect: Allow
-              Action:
-                - 's3:GetObject'
-              Resource: !Sub arn:aws:s3:::${S3BucketName}/*
-            - Sid: TmpBucketList
-              Effect: Allow
-              Action:
-                - s3:ListBucket
-              Resource: !Sub arn:aws:s3:::${TmpS3Bucket}
-            - Sid: TmpBucketReadWrite
-              Effect: Allow
-              Action:
-                - s3:PutObject
-                - s3:GetObject
-              Resource: !Sub arn:aws:s3:::${TmpS3Bucket}/*
   CassandraNode:
     Type: 'AWS::EC2::Instance'
     CreationPolicy:
@@ -264,9 +213,9 @@ Resources:
                 echo $PrivateIp
                 echo "----Before---------"
                 if [ -z "${SeedNodeIps}" ]; then
-                  ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/dse-install.yml --extra-vars "dse_version=${DSEVersion} cluster_name=${ClusterName} dc=${DatacenterName} seeds=$PrivateIp opscenter_ip=${OpsCenterIp} host=local"
+                  ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/dse-install.yml --extra-vars "dse_version=${DSEVersion} cluster_name=${ClusterName} dc=${DataCenterName} seeds=$PrivateIp opscenter_ip=${OpsCenterIp} host=local"
                 else
-                  ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/dse-install.yml --extra-vars "dse_version=${DSEVersion} cluster_name=${ClusterName} dc=${DatacenterName} seeds=${SeedNodeIps} opscenter_ip=${OpsCenterIp} host=local"
+                  ansible-playbook -v -u ubuntu -i /home/cassandra/ansible-hosts.cfg --private-key /home/ubuntu/.ssh/id_rsa /home/cassandra/dse-install.yml --extra-vars "dse_version=${DSEVersion} cluster_name=${ClusterName} dc=${DataCenterName} seeds=${SeedNodeIps} opscenter_ip=${OpsCenterIp} host=local"
                 fi
                 echo "----After---------"
                 echo ${SeedNodeIps}
@@ -283,9 +232,9 @@ Resources:
         - DeleteOnTermination: true
           DeviceIndex: "0"
           # SubnetId: !If [CreateInPublicSubnet, !Ref PublicSubnet2ID, !Ref PrivateSubnet2ID]
-          SubnetId: !Ref SubnetID
+          SubnetId: !Ref SubnetId
           GroupSet:
-            - !Ref SecGroup
+            - !Ref SecGroupId
       KeyName: !Ref KeyPairName
       ImageId: !FindInMap
         - AWSAMIRegionMap
@@ -336,15 +285,15 @@ Outputs:
     Condition: Seed1
     Value: !GetAtt CassandraNode.PrivateIp
     Description: C* Node Private IP
-  Seed1PublicIpAddress :
-    Condition: Seed1
-    Value: !If [CreateInPublicSubnet, !GetAtt CassandraNode.PublicIp, ""]
-    Description: C* Node Public IP
+  # Seed1PublicIpAddress :
+  #   Condition: Seed1
+  #   Value: !If [CreateInPublicSubnet, !GetAtt CassandraNode.PublicIp, ""]
+  #   Description: C* Node Public IP
   Seed2PrivateIpAddress:
     Condition: Seed2
     Value: !GetAtt CassandraNode.PrivateIp
     Description: C* Node Private IP
-  Seed2PublicIpAddress :
-    Condition: Seed2
-    Value: !If [CreateInPublicSubnet, !GetAtt CassandraNode.PublicIp, ""]
-    Description: C* Node Public IP
+  # Seed2PublicIpAddress :
+  #   Condition: Seed2
+  #   Value: !If [CreateInPublicSubnet, !GetAtt CassandraNode.PublicIp, ""]
+  #   Description: C* Node Public IP

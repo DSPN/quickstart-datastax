@@ -1,3 +1,4 @@
+#OPSC-6.7.7.2
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Datastax template, License: Apache 2.0 (Please do not remove) June,27,2017
   (qs-1nbqhl4up)'
@@ -11,93 +12,63 @@ Metadata:
           - AccessLocation
           - VPCId
           - VPCCIDR
-          - PrivateSubnets
           - PublicSubnetId
       - Label:
           default: Datastax Setup
         Parameters:
           - ClusterName
-          - KeyName
-          - DSAcademyUser
-          - DSAcademyPW
+          - KeyPairName
           - DSEVersion
-          - DBPassword
       - Label:
           default: OpsCenter Setup
         Parameters:
           - OpsCenterInstanceType
-          - OpsCPassword
       - Label:
           default: 1st Datacenter & Node Setup
         Parameters:
           - DC0Size
           - DC0Name
-          - DC0Instance
+          - DC0InstanceType
           - DC0VolumeSize
-      - Label:
-          default: (Optional) 2nd Datacenter & Node Setup
-        Parameters:
-          - DC1Size
-          - DC1Name
-          - DC1Instance
-          - DC1VolumeSize
       - Label:
           default: AWS Quick Start Configuration
         Parameters:
-          - QSS3BucketName
-          - QSS3BucketRegion
-          - QSS3KeyPrefix
+          - S3BucketName
+          - S3BucketRegion
+          - S3KeyPrefix
     ParameterLabels:
       AccessLocation:
         default: Permitted IP range
       AvailabilityZones:
         default: Availability Zones
-      KeyName:
+      KeyPairName:
         default: Key Name
       DSEVersion:
         default: DSE version
-      DSAcademyUser:
-        default: DataStax Academy Username
-      DBPassword:
-        default: Database Password
-      DSAcademyPW:
-        default: DataStax Academy Password
-      OpsCPassword:
-        default: OpsCenter Password
       DC0Size:
         default: 1st Data Center Size
       DC0Name:
         default: 1st Data Center Name
-      DC0Instance:
+      DC0InstanceType:
         default: 1st Data Center Instances Type
       DC0VolumeSize:
         default: 1st Data Center Volume Size
-      DC1Size:
-        default: 2nd Data Center Size
-      DC1Name:
-        default: 2nd Data Center Name
-      DC1Instance:
-        default: 2nd Data Center Instances Type
-      DC1VolumeSize:
-        default: 2nd Data Center Volume Size
       ClusterName:
         default: Cluster Name
-      QSS3BucketName:
+      S3BucketName:
         default: Quick Start S3 Bucket Name
-      QSS3BucketRegion:
+      S3BucketRegion:
         default: Quick Start S3 bucket region
-      QSS3KeyPrefix:
+      S3KeyPrefix:
         default: Quick Start S3 Key Prefix
       VPCId:
         default: VPC ID
-      PrivateSubnets:
-        default: Private Subnets
       VPCCIDR:
         default: VPC CIDR
       PublicSubnetId:
         default: Public Subnet ID
 Parameters:
-  KeyName:
+  KeyPairName:
     Description: Public/private key pair, which allows you to connect securely to
       your instance after it launches.
     Type: AWS::EC2::KeyPair::KeyName
@@ -111,16 +82,16 @@ Parameters:
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
   AvailabilityZones:
-    Type: CommaDelimitedList
+    Type: List<AWS::EC2::AvailabilityZone::Name>
     Description: The list of Availability Zones to use for the subnets in the VPC.
       The Quick Start uses three Availability Zones from your list and preserves the
       logical order you specify.
   VPCId:
     Description: Id of existing VPC
     Type: AWS::EC2::VPC::Id
-  PrivateSubnets:
-    Type: CommaDelimitedList
-    Description: List of private subnet ids to deploy nodes into
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of subnet ids to deploy nodes into
   VPCCIDR:
     Description: CIDR block of the VPC
     Type: String
@@ -130,25 +101,11 @@ Parameters:
   DSEVersion:
     Type: String
     Description: DSE version to install.
-    Default: 6.7.3
+    Default: 6.7.7
     AllowedValues:
       - 5.1.15
       - 6.7.3
-  DSAcademyUser:
-    Type: String
-    Description: User name for your academy.datastax.com account.
-  DSAcademyPW:
-    Type: String
-    Description: Password for your academy.datastax.com account.
-    NoEcho: true
-  DBPassword:
-    Type: String
-    Description: Password for the default Cassandra user 'cassandra'.
-    NoEcho: true
-  OpsCPassword:
-    Type: String
-    Description: Password for default DSE OpsCenter administrator.
-    NoEcho: true
+      - 6.7.7
   DC0Size:
     Description: The number of nodes to create in the 1st DSE datacenter.
     Type: Number
@@ -166,7 +123,7 @@ Parameters:
     Description: Name of the 1st Data Center.
     Type: String
     Default: DC0
-  DC0Instance:
+  DC0InstanceType:
     Description: EC2 instance type for the nodes in each DSE datacenter.
     Type: String
     AllowedValues:
@@ -183,57 +140,9 @@ Parameters:
       - i3.xlarge
       - i3.2xlarge
       - i3.4xlarge
-    Default: m4.xlarge
+    Default: t2.medium
   DC0VolumeSize:
     Description: The EBS volume size, in GiB, for the nodes in each datacenter.
-    Type: Number
-    AllowedValues:
-      - 1024
-      - 2048
-    Default: 1024
-  DC1Size:
-    Description: >-
-      The number of nodes to create in the 2nd DSE datacenter. Select 0 if you need
-      only 1 Data Center. If you want to split your workloads with different set of
-      nodes, you can choose to deploy a 2nd Data Center. The 2nd Data Center can have
-      different configuration i.e instance type, volume size etc. for the nodes.
-    Type: Number
-    Default: 0
-    AllowedValues:
-      - 0
-      - 3
-      - 4
-      - 5
-      - 6
-      - 7
-      - 8
-      - 9
-    ConstraintDescription: Value must be an integer from 3-9 or 0 if you dont need
-      a second datacenter.
-  DC1Name:
-    Description: Name of the 2nd Data Center.
-    Type: String
-    Default: DC1
-  DC1Instance:
-    Description: EC2 instance type for the nodes in the 2nd Data Center.
-    Type: String
-    AllowedValues:
-      - t2.medium
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - m4.4xlarge
-      - m4.10xlarge
-      - c4.large
-      - c4.xlarge
-      - c4.2xlarge
-      - c4.4xlarge
-      - i3.xlarge
-      - i3.2xlarge
-      - i3.4xlarge
-    Default: m4.xlarge
-  DC1VolumeSize:
-    Description: The EBS volume size, in GiB, for the nodes in 2nd datacenter.
     Type: Number
     AllowedValues:
       - 1024
@@ -246,13 +155,14 @@ Parameters:
   OpsCenterInstanceType:
     Description: Node EC2 instance type
     Type: String
-    Default: m4.2xlarge
     AllowedValues:
+      - t2.medium
       - m4.large
       - m4.xlarge
       - m4.2xlarge
+    Default: t2.medium
     ConstraintDescription: must be a valid EC2 instance type.
-  QSS3BucketName:
+  S3BucketName:
     AllowedPattern: ^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
     ConstraintDescription: Quick Start bucket name can include numbers, lowercase
       letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen
@@ -262,11 +172,11 @@ Parameters:
       can include numbers, lowercase letters, uppercase letters, and hyphens (-).
       It cannot start or end with a hyphen (-).
     Type: String
-  QSS3BucketRegion:
+  S3BucketRegion:
     Default: 'us-east-1'
-    Description: 'The AWS Region where the Quick Start S3 bucket (QSS3BucketName) is hosted. When using your own bucket, you must specify this value.'
+    Description: 'The AWS Region where the Quick Start S3 bucket (S3BucketName) is hosted. When using your own bucket, you must specify this value.'
     Type: String
-  QSS3KeyPrefix:
+  S3KeyPrefix:
     AllowedPattern: ^[0-9a-zA-Z-/]*$
     ConstraintDescription: Quick Start key prefix can include numbers, lowercase letters,
       uppercase letters, hyphens (-), and forward slash (/).
@@ -276,97 +186,55 @@ Parameters:
       forward slash (/).
     Type: String
 Conditions:
-  GovCloudCondition: !Equals
-    - !Ref 'AWS::Region'
-    - us-gov-west-1
-  CreateDC1: !Not
-    - !Equals
-      - !Ref 'DC1Size'
-      - 0
-  UsingDefaultBucket: !Equals [!Ref QSS3BucketName, 'aws-quickstart']
+  UsingDefaultBucket: !Equals [!Ref S3BucketName, 'aws-quickstart']
+  Create3rdNode: !Equals [!Ref DC0Size, 3]
+  CreateASG: !Not [!Equals [!Ref DC0Size, 3]]
 Resources:
-  S3Bucket:
+  InstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          -
+            Effect: 'Allow'
+            Principal:
+              Service:
+                - 'ec2.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      Path: '/'
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: '/'
+      Roles:
+        - Ref: 'InstanceRole'
+  AuthenticatedS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+        PolicyName: AuthenticatedS3GetObjects
+        Roles:
+        - !Ref InstanceRole
+        PolicyDocument:
+          Statement:
+            - Sid: BucketAccess
+              Effect: Allow
+              Action:
+                - 's3:GetObject'
+              Resource: !Sub arn:aws:s3:::${S3BucketName}/*
+            - Sid: TmpBucketList
+              Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${TmpS3Bucket}
+            - Sid: TmpBucketReadWrite
+              Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub arn:aws:s3:::${TmpS3Bucket}/*
+  TmpS3Bucket:
     Type: AWS::S3::Bucket
-    Properties:
-      AccessControl: Private
-    DeletionPolicy: Delete
-  S3RoleOpsC:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Path: /
-  S3RolePoliciesOpsC:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: s3-access
-      PolicyDocument:
-        Statement:
-          - Effect: Allow
-            Action:
-              - s3:GetObject
-              - s3:DeleteObject
-              - s3:PutObject
-            Resource: !Join
-              - ''
-              - - 'arn:aws:s3:::'
-                - !Ref 'S3Bucket'
-                - /*
-          - Effect: Allow
-            Action:
-              - s3:ListBucket
-            Resource: !Join
-              - ''
-              - - 'arn:aws:s3:::'
-                - !Ref 'S3Bucket'
-      Roles:
-        - !Ref 'S3RoleOpsC'
-  S3ProfileOpsC:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Path: /
-      Roles:
-        - !Ref 'S3RoleOpsC'
-  S3RoleNode:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ec2.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Path: /
-  S3RolePoliciesNode:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: s3-access
-      PolicyDocument:
-        Statement:
-          - Effect: Allow
-            Action:
-              - s3:GetObject
-            Resource: !Join
-              - ''
-              - - 'arn:aws:s3:::'
-                - !Ref 'S3Bucket'
-                - /*
-      Roles:
-        - !Ref 'S3RoleNode'
-  S3ProfileNode:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Path: /
-      Roles:
-        - !Ref 'S3RoleNode'
   OpsCSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -376,101 +244,180 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: !Ref 'AccessLocation'
-        - IpProtocol: tcp
-          FromPort: 8443
-          ToPort: 8443
-          CidrIp: !Ref 'AccessLocation'
+          CidrIp: !Ref AccessLocation
         - IpProtocol: tcp
           FromPort: 8888
           ToPort: 8888
-          CidrIp: !Ref 'VPCCIDR'
+          CidrIp: !Ref AccessLocation
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: !Ref 'VPCCIDR'
+          CidrIp: !Ref VPCCIDR
         - IpProtocol: tcp
           FromPort: 61620
           ToPort: 61620
-          CidrIp: !Ref 'VPCCIDR'
+          CidrIp: !Ref VPCCIDR
+  DSESecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access, and DSE ports
+      VpcId: !Ref 'VPCId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1
+          ToPort: 65535
+          CidrIp: !Ref VPCCIDR
+################
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AccessLocation
+################
+  DC0SeedNode1Stack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        !Sub
+          - https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${S3KeyPrefix}templates/dse-node.template
+          - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref S3BucketRegion]
+            S3Bucket: !If [UsingDefaultBucket, !Sub '${S3BucketName}-${AWS::Region}', !Ref S3BucketName]
+      Parameters:
+        DSEVersion: !Ref DSEVersion
+        ClusterName: !Ref ClusterName
+        DataCenterName: !Ref DC0Name
+        SubnetId: !Select [ 0, !Ref Subnets ]
+        InstanceType: !Ref DC0InstanceType
+        VolumeSize: !Ref DC0VolumeSize
+        KeyPairName: !Ref KeyPairName
+        S3KeyPrefix: !Ref S3KeyPrefix
+        S3BucketName: !Ref S3BucketName
+        S3BucketRegion: !Ref S3BucketRegion
+        SecGroupId: !GetAtt DSESecurityGroup.GroupId
+        InstanceProfile: !Ref InstanceProfile
+        InstanceRole: !Ref InstanceRole
+        NodeNumber: "1"
+        OpsCenterIp: "127.0.0.1"
+        TmpS3Bucket: !Ref TmpS3Bucket
   OpsCenterstack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL:
         !Sub
-          - 'https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${QSS3KeyPrefix}templates/opscenter.template'
-          - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref QSS3BucketRegion]
-            S3Bucket: !If [UsingDefaultBucket, !Sub '${QSS3BucketName}-${AWS::Region}', !Ref QSS3BucketName]
+          - https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${S3KeyPrefix}templates/dse-opsc.template
+          - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref S3BucketRegion]
+            S3Bucket: !If [UsingDefaultBucket, !Sub '${S3BucketName}-${AWS::Region}', !Ref S3BucketName]
       Parameters:
-        KeyName: !Ref 'KeyName'
-        OpsCenterSecurityGroupId: !GetAtt 'OpsCSecurityGroup.GroupId'
-        SubnetId: !Ref 'PublicSubnetId'
-        ClusterName: !Ref 'ClusterName'
-        DC0Size: !Ref 'DC0Size'
-        DC1Size: !Ref 'DC1Size'
-        DSEVersion: !Ref 'DSEVersion'
-        DSAcademyUser: !Ref 'DSAcademyUser'
-        DSAcademyPW: !Ref 'DSAcademyPW'
-        DBPassword: !Ref 'DBPassword'
-        OpsCPassword: !Ref 'OpsCPassword'
-        Profile: !Ref 'S3ProfileOpsC'
-        S3Bucket: !Ref 'S3Bucket'
-        InstanceType: !Ref 'OpsCenterInstanceType'
-  DC0stack:
+        DSEVersion: !Ref DSEVersion
+        ClusterName: !Ref ClusterName
+        KeyPairName: !Ref KeyPairName
+        SecGroupId: !GetAtt OpsCSecurityGroup.GroupId
+        InstanceProfile: !Ref InstanceProfile
+        InstanceRole: !Ref InstanceRole
+        SubnetId: !Ref PublicSubnetId
+        S3BucketName: !Ref S3BucketName
+        S3BucketRegion: !Ref S3BucketRegion
+        S3KeyPrefix: !Ref S3KeyPrefix
+        InstanceType: !Ref OpsCenterInstanceType
+        SeedNodeIps: !GetAtt DC0SeedNode1Stack.Outputs.Seed1PrivateIpAddress
+        TmpS3Bucket: !Ref TmpS3Bucket
+  DC0SeedNode2Stack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL:
         !Sub
-          - 'https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${QSS3KeyPrefix}templates/datacenter.template'
-          - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref QSS3BucketRegion]
-            S3Bucket: !If [UsingDefaultBucket, !Sub '${QSS3BucketName}-${AWS::Region}', !Ref QSS3BucketName]
+          - https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${S3KeyPrefix}templates/dse-node.template
+          - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref S3BucketRegion]
+            S3Bucket: !If [UsingDefaultBucket, !Sub '${S3BucketName}-${AWS::Region}', !Ref S3BucketName]
       Parameters:
-        KeyName: !Ref 'KeyName'
-        Profile: !Ref 'S3ProfileNode'
-        S3Bucket: !Ref 'S3Bucket'
-        OpsCenterIP: !GetAtt 'OpsCenterstack.Outputs.OpsCenterPrivateIP'
-        OpsCPassword: !Ref 'OpsCPassword'
-        ClusterName: !Ref 'ClusterName'
-        DataCenterName: !Ref 'DC0Name'
-        DataCenterSize: !Ref 'DC0Size'
-        InstanceType: !Ref 'DC0Instance'
-        VolumeSize: !Ref 'DC0VolumeSize'
-        VPC: !Ref 'VPCId'
+        DSEVersion: !Ref DSEVersion
+        ClusterName: !Ref ClusterName
+        DataCenterName: !Ref DC0Name
+        SubnetId: !Select [ 1, !Ref Subnets ]
+        InstanceType: !Ref DC0InstanceType
+        VolumeSize: !Ref DC0VolumeSize
+        KeyPairName: !Ref KeyPairName
+        S3KeyPrefix: !Ref S3KeyPrefix
+        S3BucketName: !Ref S3BucketName
+        S3BucketRegion: !Ref S3BucketRegion
+        SecGroupId: !GetAtt DSESecurityGroup.GroupId
+        InstanceProfile: !Ref InstanceProfile
+        InstanceRole: !Ref InstanceRole
+        NodeNumber: "2"
+        SeedNodeIps: !GetAtt DC0SeedNode1Stack.Outputs.Seed1PrivateIpAddress
+        OpsCenterIp: !GetAtt 'OpsCenterstack.Outputs.OpsCenterPrivateIP'
+        TmpS3Bucket: !Ref TmpS3Bucket
+  DC0Node3Stack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL:
+        !Sub
+          - https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${S3KeyPrefix}templates/dse-node.template
+          - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref S3BucketRegion]
+            S3Bucket: !If [UsingDefaultBucket, !Sub '${S3BucketName}-${AWS::Region}', !Ref S3BucketName]
+      Parameters:
+        DSEVersion: !Ref DSEVersion
+        ClusterName: !Ref ClusterName
+        DataCenterName: !Ref DC0Name
+        SubnetId: !Select [ 2, !Ref Subnets ]
+        InstanceType: !Ref DC0InstanceType
+        VolumeSize: !Ref DC0VolumeSize
+        KeyPairName: !Ref KeyPairName
+        S3KeyPrefix: !Ref S3KeyPrefix
+        S3BucketName: !Ref S3BucketName
+        S3BucketRegion: !Ref S3BucketRegion
+        SecGroupId: !GetAtt DSESecurityGroup.GroupId
+        InstanceProfile: !Ref InstanceProfile
+        InstanceRole: !Ref InstanceRole
+        NodeNumber: "3"
+        SeedNodeIps:
+          !Join [
+            ",",
+            [
+              !GetAtt DC0SeedNode1Stack.Outputs.Seed1PrivateIpAddress,
+              !GetAtt DC0SeedNode2Stack.Outputs.Seed2PrivateIpAddress,
+            ],
+          ]
+        OpsCenterIp: !GetAtt 'OpsCenterstack.Outputs.OpsCenterPrivateIP'
+        TmpS3Bucket: !Ref TmpS3Bucket
+  DC0NodeASGStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateASG
+    Properties:
+      TemplateURL:
+        !Sub
+          - https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${S3KeyPrefix}templates/dse-node_asg.template
+          - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref S3BucketRegion]
+            S3Bucket: !If [UsingDefaultBucket, !Sub '${S3BucketName}-${AWS::Region}', !Ref S3BucketName]
+      Parameters:
+        DSEVersion: !Ref DSEVersion
+        ClusterName: !Ref ClusterName
+        DataCenterName: !Ref DC0Name
+        InstanceType: !Ref DC0InstanceType
+        VolumeSize: !Ref DC0VolumeSize
+        KeyPairName: !Ref KeyPairName
+        S3KeyPrefix: !Ref S3KeyPrefix
+        S3BucketName: !Ref S3BucketName
+        S3BucketRegion: !Ref S3BucketRegion
+        SecGroupId: !GetAtt DSESecurityGroup.GroupId
+        InstanceProfile: !Ref InstanceProfile
+        InstanceRole: !Ref InstanceRole
         AvailabilityZones: !Join
           - ','
           - !Ref 'AvailabilityZones'
         Subnets: !Join
           - ','
-          - !Ref 'PrivateSubnets'
-        SecurityCIDR: !Ref 'VPCCIDR'
-  DC1stack:
-    Type: AWS::CloudFormation::Stack
-    Condition: CreateDC1
-    Properties:
-      TemplateURL:
-        !Sub
-          - 'https://${S3Bucket}.s3.${S3Region}.${AWS::URLSuffix}/${QSS3KeyPrefix}templates/datacenter.template'
-          - S3Region: !If [UsingDefaultBucket, !Ref 'AWS::Region', !Ref QSS3BucketRegion]
-            S3Bucket: !If [UsingDefaultBucket, !Sub '${QSS3BucketName}-${AWS::Region}', !Ref QSS3BucketName]
-      Parameters:
-        KeyName: !Ref 'KeyName'
-        Profile: !Ref 'S3ProfileNode'
-        S3Bucket: !Ref 'S3Bucket'
-        OpsCenterIP: !GetAtt 'OpsCenterstack.Outputs.OpsCenterPrivateIP'
-        OpsCPassword: !Ref 'OpsCPassword'
-        ClusterName: !Ref 'ClusterName'
-        DataCenterName: !Ref 'DC1Name'
-        DataCenterSize: !Ref 'DC1Size'
-        InstanceType: !Ref 'DC1Instance'
-        VolumeSize: !Ref 'DC1VolumeSize'
-        VPC: !Ref 'VPCId'
-        AvailabilityZones: !Join
-          - ','
-          - !Ref 'AvailabilityZones'
-        Subnets: !Join
-          - ','
-          - !Ref 'PrivateSubnets'
-        SecurityCIDR: !Ref 'VPCCIDR'
+          - !Ref 'Subnets'
+        SeedNodeIps:
+          !Join [
+            ",",
+            [
+              !GetAtt DC0SeedNode1Stack.Outputs.Seed1PrivateIpAddress,
+              !GetAtt DC0SeedNode2Stack.Outputs.Seed2PrivateIpAddress,
+            ],
+          ]
+        OpsCenterIp: !GetAtt OpsCenterstack.Outputs.OpsCenterPrivateIP
+        TmpS3Bucket: !Ref TmpS3Bucket
+        DataCenterSize: !Ref DC0Size
 Outputs:
   OpsCenterURL:
     Value: !GetAtt 'OpsCenterstack.Outputs.OpsCenterURL'
