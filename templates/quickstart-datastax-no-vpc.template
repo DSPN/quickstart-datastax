@@ -103,9 +103,8 @@ Parameters:
     Description: DSE version to install.
     Default: 6.7.7
     AllowedValues:
-      - 5.1.15
-      - 6.7.3
       - 6.7.7
+      - 6.8.0
   DC0Size:
     Description: The number of nodes to create in the 1st DSE datacenter.
     Type: Number

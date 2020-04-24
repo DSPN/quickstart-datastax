@@ -4,6 +4,7 @@ Parameters:
   DSEVersion:
     AllowedValues:
       - 6.7.7
+      - 6.8.0
     Default: 6.7.7
     ConstraintDescription: "Choose DSE version to install."
     Type: String
@@ -104,7 +105,7 @@ Mappings:
     AMI:
       1804HVM: ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-
     us-east-1:
-      1804HVM: ami-02af7ef3e6165b552
+      1804HVM: ami-0472372689de1b675
 Resources:
   CassandraGroup:
     Type: AWS::AutoScaling::AutoScalingGroup

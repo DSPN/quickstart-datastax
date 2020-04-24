@@ -21,3 +21,6 @@ minimal-west2.json
 
 # log files
 taskcat_outputs\
+
+# bin
+*.tar.gz
